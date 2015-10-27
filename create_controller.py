@@ -112,6 +112,8 @@ class CreateController(object):
         kp=0.5
         ka=0.5
         kb=0
+        if fresh is None:
+            self.command_velocity(0, 0)
         if not fresh:
             return
 
@@ -127,7 +129,7 @@ class CreateController(object):
         v = kp * rho
         w = ka * alpha + kb * beta
 
-        self.command_velocity(v, w)
+        self.command_velocity(min(v, MAX_SPEED), w)
 
 
 def main(args):
