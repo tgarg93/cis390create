@@ -1,10 +1,8 @@
-__author__ = 'tushar'
-
-
 #!/usr/bin/env python
 """
 ROS based interface for the iRobot Create 2, with localization using AprilTag detection.
 Written for CIS390 at the University of Pennsylvania
+Updated Oct 22, 2015
 """
 import roslib
 import numpy as np
@@ -45,16 +43,33 @@ class CreateController(object):
         ROS STUFF
         """
         if not posearray.poses:
-            self._marker_t = None
-            self._marker_R = None
+            self._robot_t = None
+            self._robot_R = None
             self._fresh = True
             self._no_detection = True
             return
-        (self._marker_t, self._marker_R) = get_t_R(posearray.poses[0])
+        (marker_t, marker_R) = get_t_R(posearray.poses[0])
+        # Compensate for tilt of camera
         angle = 12*np.pi/180
-        R = np.dot(np.array([[0,-1,0,0],[0,0,-1,0],[1,0,0,0],[0,0,0,1]]),np.array([[1,0,0,0],[0,np.cos(angle),-np.sin(angle),0],[0,np.sin(angle),np.cos(angle),0],[0,0,0,1]]))
-        self._marker_t = np.dot(R,self._marker_t)
-        self._marker_R = np.dot(R,self._marker_R)
+        camera_tilt=np.array([[1,0,0,0],[0,np.cos(angle),-np.sin(angle),0],[0,np.sin(angle),np.cos(angle),0],[0,0,0,1]])
+        marker_t = np.dot(camera_tilt,marker_t)
+        marker_R = np.dot(camera_tilt,marker_R)
+        # Put everything in homogeneous form
+        camera2marker = marker_R
+        camera2marker[0:3,3] = marker_t[0:3].T
+        print camera2marker
+        # Transform from camera to robot
+        camera2robot=np.linalg.inv(np.array([[0,0,1,0],[-1,0,0,-0.09],[0,-1,0,0],[0,0,0,1]]))
+        # Transform from final pose to marker
+        final2marker = np.array([[0,0,-1,0],[-1,0,0,0],[0,1,0,0],[0,0,0,1]])
+        # Put it all together
+        # Want: final to robot
+        final_hom = np.dot(np.dot(final2marker,np.linalg.inv(camera2marker)),camera2robot)
+        print final_hom
+        self._robot_t = np.copy(final_hom[0:3,3])
+        self._robot_R = final_hom
+        self._robot_R[0:3,3] = 0
+        print self._robot_t
         self._fresh = True
         self._no_detection = False
 
@@ -66,16 +81,10 @@ class CreateController(object):
         """
         if self._no_detection:
             return None, None, None, None
-        T = np.copy(self._marker_t)
-        T[1]-=0.09
-        homR = self._marker_R
-        homT = np.array([[1,0,0,T[0,0]],[0,1,0,T[1,0]],[0,0,1,T[2,0]],[0,0,0,1]])
-        marker_hom = np.dot(homR,homT)
-        Rot = np.array([[0,1,0,0],[0,0,1,0],[1,0,0,0],[0,0,0,1]])
-        marker_hom = np.dot(Rot,marker_hom)
-        angle = np.arctan2(marker_hom[1,0],marker_hom[0,0])
-        dx = marker_hom[0,3]
-        dy = marker_hom[1,3]
+        # Angle is yaw
+        angle = np.arctan2(self._robot_R[1,0],self._robot_R[0,0])
+        dx = self._robot_t[0]
+        dy = self._robot_t[1]
         fresh = self._fresh
         self._fresh=False
         return dx,dy,angle, fresh
@@ -111,6 +120,7 @@ class CreateController(object):
             self.command_velocity(v, omega)
 
         return
+
 
 def main(args):
     rospy.init_node('create_controller')
