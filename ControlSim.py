@@ -7,6 +7,7 @@ University of Pennsylvania
 from matplotlib import pyplot as plt
 import numpy as np
 import time
+import math
 
 class CreateSim(object):
     def __init__(self):
@@ -15,7 +16,7 @@ class CreateSim(object):
         """
         self.done=False
         self.x=1
-        self.y=1
+        self.y=-1
         self.theta=-3*np.pi/4-0.2
         self.dt=1.0/60
 
@@ -52,6 +53,7 @@ class CreateSim(object):
         """
         MAX_SPEED=1
         x, y, theta, fresh = self.get_marker_pose()
+        # print x,y
         kp=0.5
         ka=0.5
         kb=0
@@ -59,8 +61,14 @@ class CreateSim(object):
             return
 
         rho = np.sqrt(x*x + y*y)
-        beta = -theta
-        alpha = -beta
+        beta = -math.atan2(-y, -x)
+
+        alpha = -beta - theta
+        if alpha < -np.pi:
+            alpha += 2 * np.pi
+        if alpha > np.pi:
+            alpha -= 2 * np.pi
+
         v = kp * rho
         w = ka * alpha + kb * beta
 
