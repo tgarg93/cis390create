@@ -100,26 +100,33 @@ class CreateController(object):
         self._pub.publish(twist)
 
     def command_create(self):
-        MAX_SPEED=0.1
-        k_p = 0.5
-        k_a = 0.5
-        k_b = 0.5
         """
         YOUR CODE HERE
         This function is called at 60Hz. At each iteration, check if a fresh measurement has come in.
         If so, use your controller to move the create according to the robot pose.
         """
 
-        (x, y, theta, fresh) = self.get_marker_pose()
-        if fresh:
-            rho = np.sqrt(x*x + y*y)
-            beta = -atan(y/x)
-            alpha = -theta - beta
-            v = k_p * rho
-            omega = k_a*alpha + k_b * beta
-            self.command_velocity(v, omega)
+        MAX_SPEED=1
+        x, y, theta, fresh = self.get_marker_pose()
+        kp=0.5
+        ka=0.5
+        kb=0
+        if not fresh:
+            return
 
-        return
+        rho = np.sqrt(x*x + y*y)
+        beta = -math.atan2(-y, -x)
+
+        alpha = -beta - theta
+        if alpha < -np.pi:
+            alpha += 2 * np.pi
+        if alpha > np.pi:
+            alpha -= 2 * np.pi
+
+        v = kp * rho
+        w = ka * alpha + kb * beta
+
+        self.command_velocity(v, w)
 
 
 def main(args):

@@ -16,7 +16,7 @@ class CreateSim(object):
         """
         self.done=False
         self.x=1
-        self.y=-1
+        self.y=1
         self.theta=-3*np.pi/4-0.2
         self.dt=1.0/60
 
@@ -53,7 +53,6 @@ class CreateSim(object):
         """
         MAX_SPEED=1
         x, y, theta, fresh = self.get_marker_pose()
-        # print x,y
         kp=0.5
         ka=0.5
         kb=0
