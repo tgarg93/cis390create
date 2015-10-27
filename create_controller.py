@@ -107,13 +107,16 @@ class CreateController(object):
         If so, use your controller to move the create according to the robot pose.
         """
 
-        MAX_SPEED=1
+        MAX_SPEED=0.1
         x, y, theta, fresh = self.get_marker_pose()
         kp=0.5
         ka=0.5
         kb=0
+
         if fresh is None:
             self.command_velocity(0, 0)
+            return
+
         if not fresh:
             return
 
