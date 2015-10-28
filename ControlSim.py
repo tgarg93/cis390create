@@ -17,6 +17,8 @@ class CreateSim(object):
         self.done=False
         self.x=1
         self.y=1
+        self.goal_x=-1
+        self.goal_y=-1
         self.theta=-3*np.pi/4-0.2
         self.dt=1.0/60
 
@@ -38,11 +40,11 @@ class CreateSim(object):
             self.theta-=2*np.pi
         if self.theta<-np.pi:
             self.theta+=2*np.pi
-        if np.sqrt(self.x**2+self.y**2)<0.01:
+        if np.sqrt((self.goal_x - self.x)**2+(self.goal_y - self.y)**2)<0.01:
             self.done=True
         return
 
-    def command_create(self, goal_x=0, goal_y=0):
+    def command_create(self):
         """
         YOUR CODE HERE
         kp, ka and kb are gains on rho, alpha and beta
@@ -53,8 +55,8 @@ class CreateSim(object):
         """
         MAX_SPEED=1
         x, y, theta, fresh = self.get_marker_pose()
-        x -= goal_x
-        y -= goal_y
+        x -= self.goal_x
+        y -= self.goal_y
         kp=0.5
         ka=0.5
         kb=0
