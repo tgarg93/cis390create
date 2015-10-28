@@ -42,7 +42,7 @@ class CreateSim(object):
             self.done=True
         return
 
-    def command_create(self, goal_x, goal_y):
+    def command_create(self, goal_x=0, goal_y=0):
         """
         YOUR CODE HERE
         kp, ka and kb are gains on rho, alpha and beta
