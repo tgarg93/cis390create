@@ -100,7 +100,7 @@ class CreateController(object):
         twist.angular.z = wz
         self._pub.publish(twist)
 
-    def command_create(self):
+    def command_create(self, goal_x=0, goal_y=0):
         """
         YOUR CODE HERE
         This function is called at 60Hz. At each iteration, check if a fresh measurement has come in.
@@ -109,6 +109,8 @@ class CreateController(object):
 
         MAX_SPEED=0.1
         x, y, theta, fresh = self.get_marker_pose()
+        x -= goal_x
+        y -= goal_y
         kp=0.5
         ka=0.5
         kb=0
