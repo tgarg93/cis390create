@@ -42,7 +42,7 @@ class CreateSim(object):
             self.done=True
         return
 
-    def command_create(self):
+    def command_create(self, goal_x, goal_y):
         """
         YOUR CODE HERE
         kp, ka and kb are gains on rho, alpha and beta
@@ -53,6 +53,8 @@ class CreateSim(object):
         """
         MAX_SPEED=1
         x, y, theta, fresh = self.get_marker_pose()
+        x -= goal_x
+        y -= goal_y
         kp=0.5
         ka=0.5
         kb=0
