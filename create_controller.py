@@ -10,6 +10,7 @@ import numpy.matlib
 import sys
 import rospy
 import cv2
+from math import atan2, cos, sin
 
 from std_msgs.msg import (
     Header,
@@ -73,7 +74,7 @@ class CreateController(object):
             self._robot_R = None
             self._no_detection = True
             return
-        
+
         (self._robot_t, self._robot_R) = get_t_R(posearray.pose)
         self._no_detection = False
 
@@ -86,7 +87,7 @@ class CreateController(object):
             self._true_R = None
             return
         (self._true_t, self._true_R) = get_t_R(posearray.pose)
-  
+
     def get_ground_truth_pose(self):
         """
         Gives ground truth pose when noisy marker pose is given. Returns (x,y,theta) as
@@ -145,14 +146,50 @@ class CreateController(object):
         This function is called at 60Hz. At each iteration, check if a fresh measurement has come in.
         If so, use your controller to move the create according to the robot pose.
         """
+
+        kp=0.5
+        ka=0.5
+        kb=0
+
+        v = 0.5
+        w = 0
+
         dt = None
         if self._last_time is not None:
             dt = (rospy.Time.now() - self._last_time).to_sec()
         self._last_time = rospy.Time.now()
 
+        (z_t, fresh) = self.get_marker_pose()
+
+        if fresh:
+            # Update step
+            K = self.P_t + np.linalg.inv(self.P_t + self.R_t)
+            self.x_t = self.x_t + K*(z_t - x_t)
+            self.P_t = (np.identity(3) - K)*self.P_t
+            self.command_velocity(v, w)
+
+        # Prediction step
+        self.x_t[0] = self.x_t[0] + v*dt*cos(self.x_t[2])
+        self.x_t[1] = self.x_t[1] + v*dt*sin(self.x_t[2])
+        self.x_t[2] = self.x_t[2] + w*dt
+
+        F = self.F_matrix(dt, v, z_t[2])
+        self.P_t = F*self.P_t*np.transpose(F) + self.Q_t
+
+
+
+
+
+
+
+
+
+
+
+
         # To save out data - for grading purposes
         # g = self.get_ground_truth_pose()
-        # self.savefile.write('%f,%f,%f,%f,%f,%f\n' % self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0]) 
+        # self.savefile.write('%f,%f,%f,%f,%f,%f\n' % self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0])
         return
 
 def main(args):
