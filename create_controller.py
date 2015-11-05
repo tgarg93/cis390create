@@ -147,11 +147,11 @@ class CreateController(object):
         If so, use your controller to move the create according to the robot pose.
         """
 
-        kp=0.5
-        ka=0.5
-        kb=0
+        kp = 0.5
+        ka = 0.5
+        kb = 0
 
-        v = 0.5
+        v = 0.05
         w = 0
 
         dt = None
@@ -176,19 +176,13 @@ class CreateController(object):
         F = self.F_matrix(dt, v, z_t[2])
         self.P_t = F*self.P_t*np.transpose(F) + self.Q_t
 
-
-
-
-
-
-
-
-
-
-
-
         # To save out data - for grading purposes
-        # g = self.get_ground_truth_pose()
+        g = self.get_ground_truth_pose()
+
+        diff = self.x_t - g
+
+        print "Difference: " + str(diff)
+
         # self.savefile.write('%f,%f,%f,%f,%f,%f\n' % self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0])
         return
 
