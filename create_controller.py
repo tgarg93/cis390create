@@ -169,8 +169,8 @@ class CreateController(object):
             self.command_velocity(v, w)
 
         # Prediction step
-        self.x_t[0] = self.x_t[0] + v*dt*cos(self.x_t[2])
-        self.x_t[1] = self.x_t[1] + v*dt*sin(self.x_t[2])
+        self.x_t[0] = self.x_t[0] + v*dt*np.cos(self.x_t[2])
+        self.x_t[1] = self.x_t[1] + v*dt*np.sin(self.x_t[2])
         self.x_t[2] = self.x_t[2] + w*dt
 
         F = self.F_matrix(dt, v, z_t[2])
