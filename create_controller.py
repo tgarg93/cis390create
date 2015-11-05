@@ -158,6 +158,7 @@ class CreateController(object):
         if self._last_time is not None:
             dt = (rospy.Time.now() - self._last_time).to_sec()
         self._last_time = rospy.Time.now()
+        dt = 0
 
         (z_t, fresh) = self.get_marker_pose()
 
