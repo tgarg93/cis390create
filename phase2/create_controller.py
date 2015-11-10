@@ -147,6 +147,7 @@ class CreateController(object):
         If so, use your controller to move the create according to the robot pose.
         """
 
+        (z_t, fresh) = self.get_marker_pose()
         kp = 0.5
         ka = 0.5
         kb = 0
@@ -154,35 +155,29 @@ class CreateController(object):
         v = 0.05
         w = 0
 
-        dt = None
         if self._last_time is not None:
             dt = (rospy.Time.now() - self._last_time).to_sec()
-        self._last_time = rospy.Time.now()
-        dt = 0
+        else:
+            dt = 0
 
-        (z_t, fresh) = self.get_marker_pose()
+        self._last_time = rospy.Time.now()
 
         if fresh:
             # Update step
-            K = self.P_t + np.linalg.inv(self.P_t + self.R_t)
-            self.x_t = self.x_t + K*(z_t - x_t)
-            self.P_t = (np.identity(3) - K)*self.P_t
+            K = np.dot(self.P_t,np.linalg.inv(self.P_t + self.R_t))
+            self.x_t = self.x_t + np.dot(K, (z_t - self.x_t))
+            self.P_t = np.dot((np.identity(3) - K),self.P_t)
             self.command_velocity(v, w)
-
-        # Prediction step
-        self.x_t[0] = self.x_t[0] + v*dt*np.cos(self.x_t[2])
-        self.x_t[1] = self.x_t[1] + v*dt*np.sin(self.x_t[2])
-        self.x_t[2] = self.x_t[2] + w*dt
-
-        F = self.F_matrix(dt, v, z_t[2])
-        self.P_t = F*self.P_t*np.transpose(F) + self.Q_t
+        else:
+            # Prediction step
+            self.x_t[0] = self.x_t[0] + (v * dt * np.cos(self.x_t[2]))
+            self.x_t[1] = self.x_t[1] + (v * dt * np.sin(self.x_t[2]))
+            self.x_t[2] = self.x_t[2] + (w * dt)
+            F = self.F_matrix(dt, v, x_t[2])
+            self.P_t = np.dot(np.dot(F,self.P_t), np.transpose(F)) + self.Q_t
 
         # To save out data - for grading purposes
         g = self.get_ground_truth_pose()
-
-        diff = self.x_t - g
-
-        print "Difference: " + str(diff)
 
         # self.savefile.write('%f,%f,%f,%f,%f,%f\n' % self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0])
         return
