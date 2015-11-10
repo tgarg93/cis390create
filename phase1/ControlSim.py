@@ -46,7 +46,6 @@ class CreateSim(object):
 
     def command_create(self):
         """
-        YOUR CODE HERE
         kp, ka and kb are gains on rho, alpha and beta
         For the first project, kb should always be set to 0, as we do not
         require alignment of the create's pose with the marker, and otherwise
