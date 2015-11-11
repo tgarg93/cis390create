@@ -7,6 +7,7 @@ for CIS 390 Fall 2015 at the University of Pennsylvania
 from matplotlib import pyplot as plt
 import numpy as np
 import time
+import math
 
 class CreateSim(object):
     def __init__(self):
@@ -35,7 +36,7 @@ class CreateSim(object):
     def F_matrix(self,dt,v,theta_t):
         """
         Same as on the Creates.
-        """	
+        """
         return np.array([[1, 0, -dt*v*np.sin(theta_t)],
                          [0, 1,  dt*v*np.cos(theta_t)],
                          [0, 0,                     1]])
@@ -64,9 +65,9 @@ class CreateSim(object):
         if np.sqrt(self.x_t[0,0]**2+self.x_t[1,0]**2)<0.01:
             self.done=True
         return
-        
+
     def command_create(self):
-        """ 
+        """
         YOUR CODE HERE
         """
         MAX_SPEED=0.1
@@ -75,21 +76,34 @@ class CreateSim(object):
         ka=0.5
         kb=0
 
-        v = 0.05
-        w = 0
+        x = z_t[0]
+        y = z_t[1]
+        theta = z_t[2]
+
+        rho = np.sqrt(x*x + y*y)
+        beta = -math.atan2(-y, -x)
+
+        alpha = -beta - theta
+        if alpha < -np.pi:
+            alpha += 2 * np.pi
+        if alpha > np.pi:
+            alpha -= 2 * np.pi
+
+        v = kp * rho
+        w = ka * alpha + kb * beta
 
         if fresh:
             # Update step
             K = np.dot(self.P_t,np.linalg.inv(self.P_t + self.R_t))
             self.x_t = self.x_t + np.dot(K, (z_t - self.x_t))
             self.P_t = np.dot((np.identity(3) - K),self.P_t)
-            self.command_velocity(v, w)
+            self.command_velocity(min(v, MAX_SPEED), w)
         else:
             # Prediction step
             self.x_t[0] = self.x_t[0] + (v * dt * np.cos(self.x_t[2]))
             self.x_t[1] = self.x_t[1] + (v * dt * np.sin(self.x_t[2]))
             self.x_t[2] = self.x_t[2] + (w * dt)
-            F = self.F_matrix(dt, v, x_t[2])
+            F = self.F_matrix(dt, v, self.x_t[2])
             self.P_t = np.dot(np.dot(F,self.P_t), np.transpose(F)) + self.Q_t
 
         return
