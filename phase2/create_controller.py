@@ -48,9 +48,9 @@ class CreateController(object):
         self.v = 0.0
         self.omega = 0.0
         # Data saving
-        #self.savefile = open('~/Desktop/data.csv','ow')
+        self.savefile = open('data.csv','w+')
         # Noise covariances
-        self.Q_t = np.eye(3)
+        self.Q_t = np.eye(3) * 10 ** -2
         self.R_t = np.eye(3)
         # Start with no informatnoi - origin with very large covariance
         self.x_t = np.array([[0,0,0]]).T
@@ -152,8 +152,7 @@ class CreateController(object):
         ka = 0.5
         kb = 0
 
-        v = 0.05
-        w = 0
+
 
         if self._last_time is not None:
             dt = (rospy.Time.now() - self._last_time).to_sec()
@@ -162,24 +161,52 @@ class CreateController(object):
 
         self._last_time = rospy.Time.now()
 
+        if fresh is None:
+            self.command_velocity(0,0)
+            return
+
+        x = z_t[0]
+        y = z_t[1]
+        theta = z_t[2]
+
+        rho = np.sqrt(x*x + y*y)
+        beta = -math.atan2(-y, -x)
+
+        alpha = -beta - theta
+        if alpha < -np.pi:
+            alpha += 2 * np.pi
+        if alpha > np.pi:
+            alpha -= 2 * np.pi
+
+        v = kp * rho
+        w = ka * alpha + kb * beta
+
+        #v = 0.05
+        #w = 0
+
         if fresh:
             # Update step
             K = np.dot(self.P_t,np.linalg.inv(self.P_t + self.R_t))
             self.x_t = self.x_t + np.dot(K, (z_t - self.x_t))
             self.P_t = np.dot((np.identity(3) - K),self.P_t)
-            self.command_velocity(v, w)
+            self.command_velocity(min(v, MAX_SPEED), w)
+
+            g = self.get_ground_truth_pose()
+            #self.savefile.write('%f,%f,%f,%f,%f,%f\n' % (self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0]))
+            print self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0]
+
         else:
             # Prediction step
             self.x_t[0] = self.x_t[0] + (v * dt * np.cos(self.x_t[2]))
             self.x_t[1] = self.x_t[1] + (v * dt * np.sin(self.x_t[2]))
             self.x_t[2] = self.x_t[2] + (w * dt)
-            F = self.F_matrix(dt, v, x_t[2])
+            F = self.F_matrix(dt, v, self.x_t[2])
             self.P_t = np.dot(np.dot(F,self.P_t), np.transpose(F)) + self.Q_t
 
-        # To save out data - for grading purposes
-        g = self.get_ground_truth_pose()
-
-        # self.savefile.write('%f,%f,%f,%f,%f,%f\n' % self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0])
+            # To save out data - for grading purposes
+            g = self.get_ground_truth_pose()
+            #self.savefile.write('%f,%f,%f,%f,%f,%f\n' % (self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0]))
+            print self.x_t[0,0], self.x_t[1,0], self.x_t[2,0], g[0,0], g[1,0], g[2,0]
         return
 
 def main(args):
