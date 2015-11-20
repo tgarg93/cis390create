@@ -7,6 +7,7 @@ for CIS 390 Fall 2015 at the University of Pennsylvania
 from matplotlib import pyplot as plt
 import numpy as np
 import time
+from math import atan2
 
 class CreateSim(object):
     def __init__(self,world_map_init,x_gt_init):
@@ -29,11 +30,39 @@ class CreateSim(object):
         self.plot = True # Set to true if you want to update plot
         self.THETA_MAX = np.pi/2 # Angle at which we can see at
         # Particles to plot - list of (x,y,theta,weight)
-        self.particles = [];
+        self.particles = []
         # self.particles = [(0.5,0.5,0,1),(0.5,-0.5,0,0.5)]; # Example
         # Map stored as array of (x,y,theta) for the april tags
         self.world_map = world_map_init
-   
+        self.num_particles = 10
+        self.init_particles()
+
+    # Generate particles at a uniform distribution
+    def init_particles(self):
+        # determine reasonable bounding box given april tags
+        min_x = np.min([i[0] for i in self.world_map]) - 1
+        max_x = np.max([i[0] for i in self.world_map]) + 1
+        min_y = np.min([i[1] for i in self.world_map]) - 1
+        max_y = np.max([i[1] for i in self.world_map]) + 1
+        range_x = max_x - min_x
+        range_y = max_y - min_y
+
+        # uniform distribution between [min_x, max_x]
+        rand_x = [i + min_x for i in np.random.random_sample(self.num_particles) * range_x]
+
+        # uniform distribution between [min_y, max_y]
+        rand_y = [i + min_y for i in np.random.random_sample(self.num_particles) * range_y]
+
+        # uniform distribution between [0, 2 pi]
+        rand_angle = np.random.random_sample(self.num_particles) * 2 * np.pi
+
+        # weights
+        weights = [1] * self.num_particles
+
+        # create particles
+        self.particles = zip(rand_x, rand_y, rand_angle, weights)
+
+
     def command_velocity(self,vx,wz):
         """
         Simulate the robot's motion using Euler integration. Noise added
@@ -68,19 +97,80 @@ class CreateSim(object):
             if theta_new < -np.pi:
                 theta_new += 2*np.pi
             if np.absolute(np.arccos(x_new[0]/(x_new[0]**2 + x_new[1]**2))) < self.THETA_MAX:
-                meas.append([x_new[0],x_new[1],theta_new,self.world_map[i,3]])
+                meas.append([x_new[0],x_new[1],theta_new,self.world_map[i][3]])
         return meas,True
+
+    # See equation in section 3.2 of project specs
+    def propogate_particles(self, v, w):
+        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles]
+        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles]
+        updated_angle = [i[2] + w * self.dt for i in self.particles]
+        weights = [i[3] for i in self.particles]
+        self.particles = zip(updated_x, updated_y, updated_angle, weights)
+
+    def likelihood(x, y, theta):
+        numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
+        return math.exp(-numerator / 2)
+
+    def reweight_particles(self, measurements):
+        self.particles = list(self.particles)
+
+        for i in range(0, len(self.particles)):
+            w = []
+            for t_r in measurements:
+                wi = 0
+                x_t_r = t_r[0]
+                y_t_r = t_r[1]
+                theta_t_r = t_r[2]
+                
+                # Find the closest match to the tag we see
+                for tag in self.world_map:
+                    if tag[2] == theta_t_r:
+                        # particle from world frame
+                        x_p_w = self.particles[i][0]
+                        y_p_w = self.particles[i][1]
+                        theta_p_w = self.particles[i][2]
+                        cos_p_w = np.cos(theta_p_w)
+                        sin_p_w = np.sin(theta_p_w)
+
+                        # tag from world frame
+                        x_t_w = tag[0]
+                        y_t_w = tag[1]
+                        theta_t_w = tag[2]
+                        cos_t_w = np.cos(theta_t_w)
+                        sin_t_w = np.sin(theta_t_w)
+
+                        # define matrices
+                        p_w = np.array([[cos_p_w, -sin_p_w, x_p_w], [sin_p_w, cos_p_w, y_p_w], [0, 0, 1]])
+                        t_w = np.array([[cos_p_w, -sin_p_w, x_p_w], [sin_p_w, cos_p_w, y_p_w], [0, 0, 1]])
+
+                        # calculate tag position from particle frame
+                        t_p = np.dot(np.linalg.inv(p_w), t_w)
+                        x_t_p = t_p[0][2]
+                        y_t_p = t_p[1][2]
+                        theta_t_p = math.atan2(t_p[1][0], t_p[0][0])
+
+                        wi = max(wi, likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
+                w.append(wi)
+
+            particle = list(self.particles[i])
+            particle[3] = np.prod(np.array(w))
+            self.particles[i] = tuple(particle)
 
     def command_create(self):
         """ 
         YOUR CODE HERE
         """
         MAX_SPEED=0.1
-	(meas,fresh) = self.get_measurements()
-        kp=0
-        ka=0
+        (meas,fresh) = self.get_measurements()
+        kp=0.5
+        ka=0.5
         kb=0
+        v=0.5
+        w=0
 
+        self.propogate_particles(v, w)
+        self.reweight_particles(meas)
         return
 
 def main():
@@ -88,7 +178,7 @@ def main():
     Modify simulation parameters here. In particular, the world map,
     starting position, and max iterations to simulate
     """
-    max_iters=100
+    max_iters=10
     world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,1],[-2.,1.,0.,2]]
     # Other ones of varying difficulty 
     # world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,2],
@@ -110,7 +200,7 @@ def main():
     for i in range(len(sim.world_map)):
         ax.arrow(sim.world_map[i][0],sim.world_map[i][1],0.2*np.cos(sim.world_map[i][2]),0.2*np.sin(sim.world_map[i][2]),color=[0.,1.,0.],head_width=0.05,head_length=0.01)
     iteration = 0
-    while not sim.done and iteration<max_iter:
+    while not sim.done and iteration < max_iters:
         sim.command_create()
         if sim.plot:
             ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
