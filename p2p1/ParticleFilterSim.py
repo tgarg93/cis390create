@@ -7,7 +7,7 @@ for CIS 390 Fall 2015 at the University of Pennsylvania
 from matplotlib import pyplot as plt
 import numpy as np
 import time
-from math import atan2
+import math
 
 class CreateSim(object):
     def __init__(self,world_map_init,x_gt_init):
@@ -57,7 +57,7 @@ class CreateSim(object):
         rand_angle = np.random.random_sample(self.num_particles) * 2 * np.pi
 
         # weights
-        weights = [1] * self.num_particles
+        weights = [1 / self.num_particles] * self.num_particles
 
         # create particles
         self.particles = zip(rand_x, rand_y, rand_angle, weights)
@@ -108,10 +108,14 @@ class CreateSim(object):
         weights = [i[3] for i in self.particles]
         self.particles = zip(updated_x, updated_y, updated_angle, weights)
 
-    def likelihood(x, y, theta):
+    def likelihood(self, x, y, theta):
+        a = 1
+        b = 1
+        c = 1
         numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
         return math.exp(-numerator / 2)
 
+    # See pseudocode in section 3.3 of project specs
     def reweight_particles(self, measurements):
         self.particles = list(self.particles)
 
@@ -125,7 +129,7 @@ class CreateSim(object):
                 
                 # Find the closest match to the tag we see
                 for tag in self.world_map:
-                    if tag[2] == theta_t_r:
+                    if tag[3] == t_r[3]:
                         # particle from world frame
                         x_p_w = self.particles[i][0]
                         y_p_w = self.particles[i][1]
@@ -142,7 +146,7 @@ class CreateSim(object):
 
                         # define matrices
                         p_w = np.array([[cos_p_w, -sin_p_w, x_p_w], [sin_p_w, cos_p_w, y_p_w], [0, 0, 1]])
-                        t_w = np.array([[cos_p_w, -sin_p_w, x_p_w], [sin_p_w, cos_p_w, y_p_w], [0, 0, 1]])
+                        t_w = np.array([[cos_t_w, -sin_t_w, x_t_w], [sin_t_w, cos_t_w, y_t_w], [0, 0, 1]])
 
                         # calculate tag position from particle frame
                         t_p = np.dot(np.linalg.inv(p_w), t_w)
@@ -150,9 +154,8 @@ class CreateSim(object):
                         y_t_p = t_p[1][2]
                         theta_t_p = math.atan2(t_p[1][0], t_p[0][0])
 
-                        wi = max(wi, likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
+                        wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
                 w.append(wi)
-
             particle = list(self.particles[i])
             particle[3] = np.prod(np.array(w))
             self.particles[i] = tuple(particle)
@@ -168,7 +171,6 @@ class CreateSim(object):
         kb=0
         v=0.5
         w=0
-
         self.propogate_particles(v, w)
         self.reweight_particles(meas)
         return
@@ -178,7 +180,7 @@ def main():
     Modify simulation parameters here. In particular, the world map,
     starting position, and max iterations to simulate
     """
-    max_iters=10
+    max_iters=50
     world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,1],[-2.,1.,0.,2]]
     # Other ones of varying difficulty 
     # world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,2],
