@@ -27,14 +27,14 @@ class CreateSim(object):
         self.omega = 0
         self.x_t = np.array([[0.0,0.0,0.0]]).T
         self.dt=1.0/60
-        self.plot = True # Set to true if you want to update plot
+        self.plot = False # Set to true if you want to update plot
         self.THETA_MAX = np.pi/2 # Angle at which we can see at
         # Particles to plot - list of (x,y,theta,weight)
         self.particles = []
         # self.particles = [(0.5,0.5,0,1),(0.5,-0.5,0,0.5)]; # Example
         # Map stored as array of (x,y,theta) for the april tags
         self.world_map = world_map_init
-        self.num_particles = 10
+        self.num_particles = 100
         self.init_particles()
 
     # Generate particles at a uniform distribution
@@ -57,7 +57,7 @@ class CreateSim(object):
         rand_angle = np.random.random_sample(self.num_particles) * 2 * np.pi
 
         # weights
-        weights = [1 / self.num_particles] * self.num_particles
+        weights = [1.0 / self.num_particles] * self.num_particles
 
         # create particles
         self.particles = zip(rand_x, rand_y, rand_angle, weights)
@@ -96,15 +96,16 @@ class CreateSim(object):
                 theta_new -= 2*np.pi
             if theta_new < -np.pi:
                 theta_new += 2*np.pi
-            if np.absolute(np.arccos(x_new[0]/(x_new[0]**2 + x_new[1]**2))) < self.THETA_MAX:
+            if np.absolute(np.arccos(x_new[0]/(math.sqrt(x_new[0]**2 + x_new[1]**2)))) < self.THETA_MAX:
                 meas.append([x_new[0],x_new[1],theta_new,self.world_map[i][3]])
         return meas,True
 
     # See equation in section 3.2 of project specs
+    # This adds some noise to x, y, and angle
     def propogate_particles(self, v, w):
-        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles]
-        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles]
-        updated_angle = [i[2] + w * self.dt for i in self.particles]
+        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles] + np.random.normal(0, 0.02, len(self.particles))
+        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles] + np.random.normal(0, 0.02, len(self.particles))
+        updated_angle = [i[2] + w * self.dt for i in self.particles] + np.random.normal(0, 0.02, len(self.particles))
         weights = [i[3] for i in self.particles]
         self.particles = zip(updated_x, updated_y, updated_angle, weights)
 
@@ -149,7 +150,7 @@ class CreateSim(object):
                         t_w = np.array([[cos_t_w, -sin_t_w, x_t_w], [sin_t_w, cos_t_w, y_t_w], [0, 0, 1]])
 
                         # calculate tag position from particle frame
-                        t_p = np.dot(np.linalg.inv(p_w), t_w)
+                        t_p = np.linalg.solve(p_w, t_w)
                         x_t_p = t_p[0][2]
                         y_t_p = t_p[1][2]
                         theta_t_p = math.atan2(t_p[1][0], t_p[0][0])
@@ -160,6 +161,29 @@ class CreateSim(object):
             particle[3] = np.prod(np.array(w))
             self.particles[i] = tuple(particle)
 
+
+    def resample(self):
+        S = []
+        c = []
+        w_sum = 0
+        for particle in self.particles:
+            w_sum += particle[3]
+            c.append(w_sum)
+
+        for i in range(0, len(self.particles)):
+            u = np.random.random_sample()
+            # find largest j such that c_j < u
+            for j in range(len(c) - 1, -1, -1):
+                diff = u - c[j]
+                if diff >= 0:
+                    break
+            new_particle = list(self.particles[j])
+            new_particle[0:3] += np.random.normal(0, 0.02, 3)
+            new_particle[3] = c[j]
+            S.append(tuple(new_particle))
+
+        self.particles = S
+
     def command_create(self):
         """ 
         YOUR CODE HERE
@@ -169,10 +193,12 @@ class CreateSim(object):
         kp=0.5
         ka=0.5
         kb=0
-        v=0.5
+        v=0.005
         w=0
         self.propogate_particles(v, w)
         self.reweight_particles(meas)
+        self.resample()
+        self.command_velocity(v, w)
         return
 
 def main():
@@ -180,15 +206,12 @@ def main():
     Modify simulation parameters here. In particular, the world map,
     starting position, and max iterations to simulate
     """
-    max_iters=50
-    world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,1],[-2.,1.,0.,2]]
+    max_iters=300
+    #world_map = [[0.0,0.0,np.pi/2,0],[1.,0.,np.pi/2,1],[-2.,1.,0.,2]]
     # Other ones of varying difficulty 
     # world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,2],
     #                   [-2.,0.,0.,1],[-2.,1.,0.,2]]
-    # world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,1],
-    #                    [2.,-1.,0.,2],[2.,-2.,0.,1],
-    #                    [1.,-3.,-np.pi/2,2],[0.,-3.,-np.pi/2,4],
-    #                    [-1.,-2.,np.pi,3],[-1.,-1.,np.pi,3]])
+    world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,1], [2.,-1.,0.,2],[2.,-2.,0.,1], [1.,-3.,-np.pi/2,2],[0.,-3.,-np.pi/2,4], [-1.,-2.,np.pi,3],[-1.,-1.,np.pi,3]]
     pos_init = np.array([[1,1,-3*np.pi/4]]).T
 
     # No changes needed after this point
@@ -213,7 +236,21 @@ def main():
             plt.draw()
             plt.show(block=False)
         iteration += 1
+        if iteration % 100 == 0:
+            print iteration
+
     print "Max iters reached"
+    ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
+    ax.plot(sim.x_gt[0,0],sim.x_gt[1,0],'gx')
+    ax.arrow(sim.x_gt[0,0],sim.x_gt[1,0],0.1*np.cos(sim.x_gt[2,0]),0.1*np.sin(sim.x_gt[2,0]),head_width=0.01,head_length=0.08)
+
+    max_weight = np.amax([sim.particles[i][3]])
+    print sim.particles[:10]
+
+    for i in range(len(sim.particles)):
+        ax.plot(sim.particles[i][0],sim.particles[i][1],'bo',ms=2/max_weight*sim.particles[i][3])
+        ax.arrow(sim.particles[i][0],sim.particles[i][1],0.1*np.cos(sim.particles[i][2]),0.1*np.sin(sim.particles[i][2]),head_width=0.01,head_length=0.08)
+    plt.draw()
     plt.show()
 
 if __name__ == "__main__":
