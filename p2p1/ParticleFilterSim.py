@@ -27,18 +27,21 @@ class CreateSim(object):
         self.omega = 0
         self.x_t = np.array([[0.0,0.0,0.0]]).T
         self.dt=1.0/60
-        self.plot = False # Set to true if you want to update plot
+        self.plot = True # Set to true if you want to update plot
         self.THETA_MAX = np.pi/2 # Angle at which we can see at
         # Particles to plot - list of (x,y,theta,weight)
         self.particles = []
         # self.particles = [(0.5,0.5,0,1),(0.5,-0.5,0,0.5)]; # Example
         # Map stored as array of (x,y,theta) for the april tags
         self.world_map = world_map_init
-        self.num_particles = 100
+        self.num_particles = 200
         self.init_particles()
+        self.iteration = 0
 
     # Generate particles at a uniform distribution
     def init_particles(self):
+
+
         # determine reasonable bounding box given april tags
         min_x = np.min([i[0] for i in self.world_map]) - 1
         max_x = np.max([i[0] for i in self.world_map]) + 1
@@ -47,14 +50,19 @@ class CreateSim(object):
         range_x = max_x - min_x
         range_y = max_y - min_y
 
+
+        rand_x = np.random.normal(self.x_gt[0], 0.5, self.num_particles)
+        rand_y = np.random.normal(self.x_gt[1], 0.5, self.num_particles)
+
         # uniform distribution between [min_x, max_x]
-        rand_x = [i + min_x for i in np.random.random_sample(self.num_particles) * range_x]
+        #rand_x = [i + min_x for i in np.random.random_sample(self.num_particles) * range_x]
 
         # uniform distribution between [min_y, max_y]
-        rand_y = [i + min_y for i in np.random.random_sample(self.num_particles) * range_y]
+        #rand_y = [i + min_y for i in np.random.random_sample(self.num_particles) * range_y]
 
-        # uniform distribution between [0, 2 pi]
-        rand_angle = np.random.random_sample(self.num_particles) * 2 * np.pi
+        # uniform distribution between [-pi, pi]
+        # rand_angle = np.random.random_sample(self.num_particles) * np.pi + self.x_gt[2]
+        rand_angle = np.ones(self.num_particles)*self.x_gt[2]
 
         # weights
         weights = [1.0 / self.num_particles] * self.num_particles
@@ -103,18 +111,18 @@ class CreateSim(object):
     # See equation in section 3.2 of project specs
     # This adds some noise to x, y, and angle
     def propogate_particles(self, v, w):
-        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles] + np.random.normal(0, 0.02, len(self.particles))
-        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles] + np.random.normal(0, 0.02, len(self.particles))
+        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles] + np.random.normal(0, 0.04, len(self.particles))
+        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles] + np.random.normal(0, 0.04, len(self.particles))
         updated_angle = [i[2] + w * self.dt for i in self.particles] + np.random.normal(0, 0.02, len(self.particles))
         weights = [i[3] for i in self.particles]
         self.particles = zip(updated_x, updated_y, updated_angle, weights)
 
     def likelihood(self, x, y, theta):
-        a = 1
-        b = 1
-        c = 1
+        a = 1.0
+        b = 1.0
+        c = 5.0
         numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
-        return math.exp(-numerator / 2)
+        return math.exp(-numerator / 2.0)
 
     # See pseudocode in section 3.3 of project specs
     def reweight_particles(self, measurements):
@@ -155,12 +163,20 @@ class CreateSim(object):
                         y_t_p = t_p[1][2]
                         theta_t_p = math.atan2(t_p[1][0], t_p[0][0])
 
-                        wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
+                        if abs(theta_t_p - theta_t_r) < np.pi / 2:
+                            wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
                 w.append(wi)
             particle = list(self.particles[i])
-            particle[3] = np.prod(np.array(w))
+            particle[3] = np.sum(np.array(w))
             self.particles[i] = tuple(particle)
 
+        w_all = sum([x[3] for x in self.particles])
+
+        for i in range(0, len(self.particles)):
+            particle = list(self.particles[i])
+            #print w_all
+            particle[3] /= w_all
+            self.particles[i] = tuple(particle)
 
     def resample(self):
         S = []
@@ -179,7 +195,7 @@ class CreateSim(object):
                     break
             new_particle = list(self.particles[j])
             new_particle[0:3] += np.random.normal(0, 0.02, 3)
-            new_particle[3] = c[j]
+            new_particle[3] = 1.0 / len(self.particles)
             S.append(tuple(new_particle))
 
         self.particles = S
@@ -193,11 +209,13 @@ class CreateSim(object):
         kp=0.5
         ka=0.5
         kb=0
-        v=0.005
+        v=0.01
         w=0
+        self.iteration += 1
         self.propogate_particles(v, w)
         self.reweight_particles(meas)
-        self.resample()
+        if self.iteration % 5 == 0:
+            self.resample()
         self.command_velocity(v, w)
         return
 
@@ -206,7 +224,7 @@ def main():
     Modify simulation parameters here. In particular, the world map,
     starting position, and max iterations to simulate
     """
-    max_iters=300
+    max_iters=40
     #world_map = [[0.0,0.0,np.pi/2,0],[1.,0.,np.pi/2,1],[-2.,1.,0.,2]]
     # Other ones of varying difficulty 
     # world_map = [[0.0,0.0,np.pi/2,1],[1.,0.,np.pi/2,2],
@@ -218,40 +236,53 @@ def main():
     sim = CreateSim(world_map, pos_init)
     fig = plt.figure(1,figsize=(5,5),dpi=90)
     ax=fig.add_subplot(111)
-    plt.ylim((-2,2))
-    plt.xlim((-2,2))
+    plt.ylim((-5,5))
+    plt.xlim((-5,5))
     ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
     plt.hold(True)
     for i in range(len(sim.world_map)):
         ax.arrow(sim.world_map[i][0],sim.world_map[i][1],0.2*np.cos(sim.world_map[i][2]),0.2*np.sin(sim.world_map[i][2]),color=[0.,1.,0.],head_width=0.05,head_length=0.01)
-    iteration = 0
+    iteration = 1
     while not sim.done and iteration < max_iters:
-        sim.command_create()
+        
         if sim.plot:
-            ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
-            ax.plot(sim.x_gt[0,0],sim.x_gt[1,0],'gx')
-            ax.arrow(sim.x_gt[0,0],sim.x_gt[1,0],0.1*np.cos(sim.x_gt[2,0]),0.1*np.sin(sim.x_gt[2,0]),head_width=0.01,head_length=0.08)
-            for i in range(len(sim.particles)):
-                ax.plot(sim.particles[i][0],sim.particles[i][1],'bo',ms=5*sim.particles[i][3])
-            plt.draw()
-            plt.show(block=False)
+            if iteration < 10 or iteration % 10 == 0:
+                print iteration
+                print sim.particles
+                fig = plt.figure(1,figsize=(5,5),dpi=90)
+                ax=fig.add_subplot(111)
+                plt.ylim((-5,5))
+                plt.xlim((-5,5))
+                plt.hold(True)
+                for i in range(len(sim.world_map)):
+                    ax.arrow(sim.world_map[i][0],sim.world_map[i][1],0.2*np.cos(sim.world_map[i][2]),0.2*np.sin(sim.world_map[i][2]),color=[0.,1.,0.],head_width=0.05,head_length=0.01)
+                plt.savefig('plot' + str(iteration) + ".png")
+                ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
+                ax.plot(sim.x_gt[0,0],sim.x_gt[1,0],'gx')
+                ax.arrow(sim.x_gt[0,0],sim.x_gt[1,0],0.1*np.cos(sim.x_gt[2,0]),0.1*np.sin(sim.x_gt[2,0]),head_width=0.01,head_length=0.08)
+                for i in range(len(sim.particles)):
+                    ax.plot(sim.particles[i][0],sim.particles[i][1],'bo',ms=5*sim.particles[i][3])
+                    ax.arrow(sim.particles[i][0],sim.particles[i][1],sim.particles[i][3]*np.cos(sim.particles[i][2]),sim.particles[i][3]*np.sin(sim.particles[i][2]),head_width=0.01,head_length=0.08)
+                plt.hold(False)
+                plt.draw()
+                plt.show(block=True)
         iteration += 1
-        if iteration % 100 == 0:
-            print iteration
+        sim.command_create()
 
     print "Max iters reached"
+    '''
     ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
     ax.plot(sim.x_gt[0,0],sim.x_gt[1,0],'gx')
     ax.arrow(sim.x_gt[0,0],sim.x_gt[1,0],0.1*np.cos(sim.x_gt[2,0]),0.1*np.sin(sim.x_gt[2,0]),head_width=0.01,head_length=0.08)
 
     max_weight = np.amax([sim.particles[i][3]])
-    print sim.particles[:10]
 
     for i in range(len(sim.particles)):
         ax.plot(sim.particles[i][0],sim.particles[i][1],'bo',ms=2/max_weight*sim.particles[i][3])
         ax.arrow(sim.particles[i][0],sim.particles[i][1],0.1*np.cos(sim.particles[i][2]),0.1*np.sin(sim.particles[i][2]),head_width=0.01,head_length=0.08)
     plt.draw()
     plt.show()
+    '''
 
 if __name__ == "__main__":
     main()
