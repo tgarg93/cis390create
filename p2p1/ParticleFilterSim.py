@@ -104,24 +104,6 @@ class CreateSim(object):
                 meas.append([x_new[0],x_new[1],theta_new,self.world_map[i][3]])
         return meas,True
 
-        '''
-        meas = []
-        for i in range(len(self.world_map)):
-            H_WT = np.array([[np.cos(self.world_map[i][2]), -np.sin(self.world_map[i][2]), self.world_map[i][0]],
-                             [np.sin(self.world_map[i][2]), np.cos(self.world_map[i][2]), self.world_map[i][1]],
-                             [0., 0., 1.]])
-            H_RT = np.linalg.solve(H_WR,H_WT)
-            theta_new = math.atan2(H_RT[1][0],H_RT[0][0])
-            x_new = [H_RT[0][2], H_RT[1][2]]
-            if theta_new > np.pi:
-                theta_new -= 2*np.pi
-            if theta_new < -np.pi:
-                theta_new += 2*np.pi
-            if np.absolute(np.arccos(x_new[0]/(math.sqrt(x_new[0]**2 + x_new[1]**2)))) < self.THETA_MAX:
-                meas.append([x_new[0],x_new[1],theta_new,self.world_map[i][3]])
-        return meas,True
-        '''
-
     def noise(self, mean, var):
         return np.random.normal(mean, var, len(self.particles))
 
@@ -179,28 +161,9 @@ class CreateSim(object):
                         y_t_p = t_p[1][2]
                         theta_t_p = math.atan2(t_p[1][0], t_p[0][0])
 
-                        #if abs(theta_t_p - theta_t_r) < np.pi / 2:
-                        '''
-                        print "x_t_p = ", x_t_p
-                        print "x_r_p = ", x_t_r
-                        print "x diff = ", x_t_p - x_t_r
-                        print "y_t_p = ", y_t_p
-                        print "y_r_p = ", y_t_r
-                        print "y diff = ", y_t_p - y_t_r
-                        print "t_p[1][0] = ", t_p[1][0]
-                        print "t_p[0][0] = ", t_p[0][0]
-                        print "theta_t_p = ", theta_t_p
-                        print "theta_r_p = ", theta_t_r
-                        print "theta diff = ", theta_t_p - theta_t_r
-                        '''
                         wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
 
                 w.append(wi)
-            '''
-            print w
-            print i + 1
-            print "========="
-            '''
             self.particles[i][3] = np.sum(np.array(w))
 
         # normalize weights
@@ -304,19 +267,6 @@ def main():
         sim.command_create()
 
     print "Max iters reached"
-    '''
-    ax.plot(sim.x_t[0,0],sim.x_t[1,0],'rx')
-    ax.plot(sim.x_gt[0,0],sim.x_gt[1,0],'gx')
-    ax.arrow(sim.x_gt[0,0],sim.x_gt[1,0],0.1*np.cos(sim.x_gt[2,0]),0.1*np.sin(sim.x_gt[2,0]),head_width=0.01,head_length=0.08)
-
-    max_weight = np.amax([sim.particles[i][3]])
-
-    for i in range(len(sim.particles)):
-        ax.plot(sim.particles[i][0],sim.particles[i][1],'bo',ms=2/max_weight*sim.particles[i][3])
-        ax.arrow(sim.particles[i][0],sim.particles[i][1],0.1*np.cos(sim.particles[i][2]),0.1*np.sin(sim.particles[i][2]),head_width=0.01,head_length=0.08)
-    plt.draw()
-    plt.show()
-    '''
 
 if __name__ == "__main__":
     main()
