@@ -41,7 +41,7 @@ class CreateSim(object):
         self.occupancy_map = occupancy_map_init
         self.iteration = 0
         self.graph = self.generate_graph(occupancy_map_init)
-        self.shortest_path = astar(self.graph, 0, len(self.graph.nodes) - 1)
+        self.shortest_path = astar(self.graph, 0, len(self.graph.nodes) - 1)[0]
         self.checkpoint = 0 # Index of point in shortest path that we are heading towards
         self.CHECKPOINT_RADIUS = .05
         self.init_particles()
@@ -126,9 +126,9 @@ class CreateSim(object):
         range_y = max_y - min_y
 
         # gaussian distribution centered at initial position
-        rand_x = np.random.normal(self.x_t[0], 0.5, self.num_particles)
-        rand_y = np.random.normal(self.x_t[1], 0.5, self.num_particles)
-        rand_angle = np.random.normal(self.x_t[2], 0.5, self.num_particles)
+        rand_x = np.random.normal(self.x_t[0][0], 0.5, self.num_particles)
+        rand_y = np.random.normal(self.x_t[1][0], 0.5, self.num_particles)
+        rand_angle = np.random.normal(self.x_t[2][0], 0.5, self.num_particles)
 
         # weights
         weights = [1.0 / self.num_particles] * self.num_particles
@@ -230,6 +230,11 @@ class CreateSim(object):
 
         self.particles = S
 
+    def get_checkpoint_position(self):
+        nodes = self.graph.nodes
+        index = self.shortest_path[self.checkpoint]
+        return nodes[index]
+
     def command_create(self):
         """ 
         YOUR CODE HERE
@@ -246,27 +251,36 @@ class CreateSim(object):
 
         # =========== PARTICLE FILTER ===========
 
-        if self.iteration < 50 or self.iteration % 6 == 0:
+        if self.iteration < 400 or self.iteration % 6 == 0:
             self.propogate_particles(self.v, self.omega)
             self.reweight_particles(meas)
-            if self.iteration % 12 == 0:
+            if self.iteration % 20 == 0:
                 self.resample()
-        if self.iteration < 50: # Only start moving after 50 iterations
+        if self.iteration < 400: # Only start moving after 50 iterations
             return
 
+        print "Estimated position = ", [self.x_t[0][0], self.x_t[1][0]]
         # ============= CONTROLLER =============
 
-        # Distance from where you are to checkpoint
-        dx = self.x_t[0][0] - self.shortest_path[self.checkpoint][0]
-        dy = self.x_t[1][0] - self.shortest_path[self.checkpoint][1]
+        # Relative distance from where you are to checkpoint
+        checkpoint_pos = self.get_checkpoint_position()
+        dx = self.x_t[0][0] - checkpoint_pos[0]
+        dy = self.x_t[1][0] - checkpoint_pos[1]
+
+        if self.iteration % 10 == 0:
+            print self.iteration
+            print np.linalg.norm([dx, dy])
+            print "Actual position = ", [self.x_gt[0][0], self.x_gt[1][0]]
+            print "Estimated position = ", [self.x_t[0][0], self.x_t[1][0]]
+            print "Checkpoint position = ", checkpoint_pos
 
         # Check/update if you are near checkpoint
         if np.linalg.norm([dx, dy]) < self.CHECKPOINT_RADIUS:
-            print "Now going towards: ",
-            print self.shortest_path[self.checkpoint]
             self.checkpoint += 1
-            dx = self.x_t[0][0] - self.shortest_path[self.checkpoint][0]
-            dy = self.x_t[1][0] - self.shortest_path[self.checkpoint][1]
+            checkpoint_pos = self.get_checkpoint_position()
+            dx = self.x_t[0][0] - checkpoint_pos[0]
+            dy = self.x_t[1][0] - checkpoint_pos[1]
+            print "Now going towards: ", checkpoint_pos
 
         # Calculate v and omega
         kp = 0.5
