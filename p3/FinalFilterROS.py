@@ -237,9 +237,11 @@ def main():
     rate = rospy.Rate(60)
 
     while not rospy.is_shutdown():
-        # move after 50th iteration
-        if sim.iteration > 50:
-            sim.publish_pose()
+        """
+        TODO: This loop runs at 60Hz. Call your particle filter functions here (i.e. check
+        for measurements, and if so reweight and potentially resample). You do not need to 
+        call your function to propagate particles here. That is taken care of automatically.
+        """
         (meas, fresh) = sim.get_measurements()
 
         # reweight if measurement is fresh
@@ -248,6 +250,8 @@ def main():
             sim.reweight_particles(meas)
             if sim.iteration % 6 == 0:
                 sim.resample()
+
+        sim.publish_pose()
         rate.sleep()
 
 if __name__ == "__main__":
