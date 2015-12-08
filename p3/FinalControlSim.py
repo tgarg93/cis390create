@@ -36,7 +36,7 @@ class CreateSim(object):
         self.dt=1.0/60
         self.THETA_MAX = np.pi/2 # Angle at which we can see markers
         self.particles = [] # Particles to plot - list of (x,y,theta,weight)
-        self.num_particles = 50
+        self.num_particles = 200
         self.world_map = world_map_init
         self.occupancy_map = occupancy_map_init
         self.iteration = 0
@@ -75,8 +75,8 @@ class CreateSim(object):
         Simulate the robot's motion using Euler integration. Noise added
         to the commands. Does not update measured state x_t.
         """
-        vx += np.random.normal(0,0.05*self.dt*vx,1)
-        wz += np.random.normal(0,0.05*self.dt*abs(wz),1)
+        #vx += np.random.normal(0,0.05*self.dt*vx,1)
+        #wz += np.random.normal(0,0.05*self.dt*abs(wz),1)
         # This part computes robot's motion based on the groundtruth
         self.x_gt[0,0]+=self.dt*vx*np.cos(self.x_gt[2,0])
         self.x_gt[1,0]+=self.dt*vx*np.sin(self.x_gt[2,0])
@@ -99,6 +99,17 @@ class CreateSim(object):
         # Get measurements to the robot frame
         meas = []
         for i in range(len(self.world_map)):
+            x_new = np.linalg.solve(H_WR,np.array([self.world_map[i][0], self.world_map[i][1], 1]))
+            theta_new = self.world_map[i][2] - th
+            if theta_new > np.pi:
+                theta_new -= 2*np.pi
+            if theta_new < -np.pi:
+                theta_new += 2*np.pi
+            if np.absolute(np.arccos(x_new[0]/np.sqrt(x_new[0]**2 + x_new[1]**2))) < self.THETA_MAX:
+                meas.append([x_new[0],x_new[1],theta_new,self.world_map[i][3]])
+        return meas,True
+        '''
+        for i in range(len(self.world_map)):
             th_w_t = self.world_map[i][2]
             H_WT = np.array([[np.cos(th_w_t), -np.sin(th_w_t), self.world_map[i][0]],
                             [np.sin(th_w_t), np.cos(th_w_t), self.world_map[i][1]],
@@ -113,22 +124,15 @@ class CreateSim(object):
             if np.absolute(np.arccos(x_new[0]/(math.sqrt(x_new[0]**2 + x_new[1]**2)))) < self.THETA_MAX:
                 meas.append([x_new[0],x_new[1],theta_new,self.world_map[i][3]])
         return meas,True
+        '''
 
      # Generate particles at a uniform distribution
     def init_particles(self):
 
-        # determine reasonable bounding box given april tags
-        min_x = np.min([i[0] for i in self.world_map]) - 1
-        max_x = np.max([i[0] for i in self.world_map]) + 1
-        min_y = np.min([i[1] for i in self.world_map]) - 1
-        max_y = np.max([i[1] for i in self.world_map]) + 1
-        range_x = max_x - min_x
-        range_y = max_y - min_y
-
         # gaussian distribution centered at initial position
-        rand_x = np.random.normal(self.x_t[0][0], 0.5, self.num_particles)
-        rand_y = np.random.normal(self.x_t[1][0], 0.5, self.num_particles)
-        rand_angle = np.random.normal(self.x_t[2][0], 0.5, self.num_particles)
+        rand_x = np.random.normal(self.x_gt[0][0], 0.5, self.num_particles)
+        rand_y = np.random.normal(self.x_gt[1][0], 0.5, self.num_particles)
+        rand_angle = np.random.normal(self.x_gt[2][0], 0.5, self.num_particles)
 
         # weights
         weights = [1.0 / self.num_particles] * self.num_particles
@@ -137,16 +141,14 @@ class CreateSim(object):
         self.particles = zip(rand_x, rand_y, rand_angle, weights)
         self.particles = [list(i) for i in self.particles]
 
-    def noise(self, mean, var):
-        return np.random.normal(mean, var, len(self.particles))
+        self.updated_robot_position()
 
-    def propogate_particles(self, v, w):
-        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles] + self.noise(0, 0.04)
-        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles] + self.noise(0, 0.04)
-        updated_angle = [i[2] + w * self.dt for i in self.particles] + self.noise(0, 0.02)
-        weights = [i[3] for i in self.particles]
-        self.particles = zip(updated_x, updated_y, updated_angle, weights)
-        self.particles = [list(i) for i in self.particles]
+    def updated_robot_position(self):
+        # new position using weighted average of particles
+        self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
+        self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
+        self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
+
 
     # implements the maximum likelihood function
     def likelihood(self, x, y, theta):
@@ -155,9 +157,29 @@ class CreateSim(object):
         c = 5.0
         numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
         return math.exp(-numerator / 2.0)
+    
+    def updated_robot_position(self):
+        # new position using weighted average of particles
+        self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
+        self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
+        self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
+        
+    def noise(self, mean, var):
+        return np.random.normal(mean, var, len(self.particles))
+
+    def propogate_particles(self, v, w):
+        updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles] + self.noise(0, 0.02)
+        updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles] + self.noise(0, 0.02)
+        updated_angle = [i[2] + w * self.dt for i in self.particles] + self.noise(0, 0.01)
+        weights = [i[3] for i in self.particles]
+        self.particles = zip(updated_x, updated_y, updated_angle, weights)
+        self.particles = [list(i) for i in self.particles]
 
     # See pseudocode in section 3.3 of project specs
     def reweight_particles(self, measurements):
+
+        temp = self.particles
+
         for i in range(0, len(self.particles)):
             w = []
             for t_r in measurements:
@@ -196,17 +218,14 @@ class CreateSim(object):
                         wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
 
                 w.append(wi)
-            self.particles[i][3] = np.sum(np.array(w))
+            self.particles[i][3] = np.prod(np.array(w))
 
         # normalize weights
         w_all = sum([x[3] for x in self.particles])
         for particle in self.particles:
             particle[3] /= w_all
 
-        # new position using weighted average of particles
-        self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
-        self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
-        self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
+        self.updated_robot_position()
 
     def resample(self):
         S = []
@@ -235,7 +254,19 @@ class CreateSim(object):
         index = self.shortest_path[self.checkpoint]
         return nodes[index]
 
+    def print_particles(self):
+        for particle in self.particles:
+            print particle
+        print ""
+
     def command_create(self):
+        '''
+        if self.iteration % 100 == 0 or self.iteration == 1:
+            print "Actual position = ", [self.x_gt[0][0], self.x_gt[1][0], self.x_gt[2][0]]
+            print "Estimated position = ", [self.x_t[0][0], self.x_t[1][0], self.x_t[2][0]]
+            print ""
+        '''
+
         """ 
         YOUR CODE HERE
         """
@@ -251,15 +282,16 @@ class CreateSim(object):
 
         # =========== PARTICLE FILTER ===========
 
-        if self.iteration < 400 or self.iteration % 6 == 0:
-            self.propogate_particles(self.v, self.omega)
+        self.propogate_particles(self.v, self.omega)
+
+        if self.iteration % 6 == 0 and len(meas) != 0:
             self.reweight_particles(meas)
-            if self.iteration % 20 == 0:
-                self.resample()
-        if self.iteration < 400: # Only start moving after 50 iterations
+        if self.iteration % 12 == 0:
+            self.resample()
+
+        if self.iteration < 100: # Only start moving after 50 iterations
             return
 
-        print "Estimated position = ", [self.x_t[0][0], self.x_t[1][0]]
         # ============= CONTROLLER =============
 
         # Relative distance from where you are to checkpoint
@@ -267,24 +299,28 @@ class CreateSim(object):
         dx = self.x_t[0][0] - checkpoint_pos[0]
         dy = self.x_t[1][0] - checkpoint_pos[1]
 
-        if self.iteration % 10 == 0:
+        # Debugging...
+        if self.iteration % 100 == 0:
             print self.iteration
-            print np.linalg.norm([dx, dy])
-            print "Actual position = ", [self.x_gt[0][0], self.x_gt[1][0]]
-            print "Estimated position = ", [self.x_t[0][0], self.x_t[1][0]]
+            print "Distance to checkpoint = ", np.linalg.norm([dx, dy])
+            print "Actual position = ", [self.x_gt[0][0], self.x_gt[1][0], self.x_gt[2][0]]
+            print "Estimated position = ", [self.x_t[0][0], self.x_t[1][0], self.x_t[2][0]]
             print "Checkpoint position = ", checkpoint_pos
 
         # Check/update if you are near checkpoint
         if np.linalg.norm([dx, dy]) < self.CHECKPOINT_RADIUS:
             self.checkpoint += 1
+            if self.checkpoint == len(self.shortest_path):
+                self.done = True
+                return
             checkpoint_pos = self.get_checkpoint_position()
             dx = self.x_t[0][0] - checkpoint_pos[0]
             dy = self.x_t[1][0] - checkpoint_pos[1]
             print "Now going towards: ", checkpoint_pos
 
         # Calculate v and omega
-        kp = 0.5
-        ka = 0.5
+        kp = 1
+        ka = 10
         kb = 0
         rho = np.sqrt(dx * dx + dy * dy)
         beta = -math.atan2(-dy, -dx)
@@ -306,7 +342,7 @@ def main():
     Modify simulation parameters here. In particular, the world map,
     starting position, and max iterations to simulate
     """
-    max_iters=400
+    max_iters=4000
     occupancy_map = [[1,1,1,1,0,0,1,1,1,1],
                      [1,1,1,1,0,0,1,1,1,1],
                      [1,1,1,1,0,0,1,1,1,1],
@@ -333,6 +369,10 @@ def main():
 
     # No changes needed after this point
     sim = CreateSim(world_map, occupancy_map, pos_init)
+    print "Nodes:"
+    print sim.graph.nodes
+    print "Shortest Path:"
+    print sim.shortest_path
     fig = plt.figure(1,figsize=(5,5),dpi=90)
     ax=fig.add_subplot(111)
     plt.hold(True)

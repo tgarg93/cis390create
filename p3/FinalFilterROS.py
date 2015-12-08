@@ -23,7 +23,7 @@ from geometry_msgs.msg import (
 )
 
 class CreateSim(object):
-    def __init__(self,world_map_init,occupancy_map_init):
+    def __init__(self,world_map_init,occupancy_map_init,x_init):
         """
         Initialize starting pose and uncertainty parameters here.
         Inputs:
@@ -33,18 +33,20 @@ class CreateSim(object):
              same id number.
         """
         self.done=False
-        self.x_t = np.array([[0.0,0.0,0.0]]).T
+        self.x_t = x_init
         # Particles to plot - list of (x,y,theta,weight)
         self.particles = []
         # self.particles = [(0.5,0.5,0,1),(0.5,-0.5,0,0.5)]; # Example
         # Map stored as array of (x,y,theta) for the april tags
-        self.num_particles = 50
-        self.init_particles()
-        self.iteration = 0
+        self.num_particles = 200
         self.world_map = world_map_init
         self.occupancy_map = occupancy_map_init
-        
+        self.iteration = 0
         self.graph = self.generate_graph(occupancy_map_init)
+        self.shortest_path = astar(self.graph, 0, len(self.graph.nodes) - 1)[0]
+        self.checkpoint = 0 # Index of point in shortest path that we are heading towards
+        self.CHECKPOINT_RADIUS = .05
+        self.init_particles()
 
         name = rospy.get_param("~myname")
         self.filter_est_pub = rospy.Publisher("/"+name+"/filter_est",PoseStamped,queue_size=10)
@@ -55,22 +57,10 @@ class CreateSim(object):
     # Generate particles at a uniform distribution
     def init_particles(self):
 
-        # determine reasonable bounding box given april tags
-        min_x = np.min([i[0] for i in self.world_map]) - 1
-        max_x = np.max([i[0] for i in self.world_map]) + 1
-        min_y = np.min([i[1] for i in self.world_map]) - 1
-        max_y = np.max([i[1] for i in self.world_map]) + 1
-        range_x = max_x - min_x
-        range_y = max_y - min_y
-
         # gaussian distribution centered at initial position
-        rand_x = np.random.normal(self.x_t[0], 0.5, self.num_particles)
-
-        # gaussian distribution centered at initial position
-        rand_y = np.random.normal(self.x_t[1], 0.5, self.num_particles)
-
-        # uniform distribution between [-pi, pi]
-        rand_angle = np.random.normal(self.x_t[2], 0.5, self.num_particles)
+        rand_x = np.random.normal(self.x_t[0][0], 0.5, self.num_particles)
+        rand_y = np.random.normal(self.x_t[1][0], 0.5, self.num_particles)
+        rand_angle = np.random.normal(self.x_t[2][0], 0.5, self.num_particles)
 
         # weights
         weights = [1.0 / self.num_particles] * self.num_particles
@@ -78,6 +68,14 @@ class CreateSim(object):
         # create particles
         self.particles = zip(rand_x, rand_y, rand_angle, weights)
         self.particles = [list(i) for i in self.particles]
+
+        self.updated_robot_position()
+
+    def updated_robot_position(self):
+        # new position using weighted average of particles
+        self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
+        self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
+        self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
 
     def noise(self, mean, var):
         return np.random.normal(mean, var, len(self.particles))
@@ -100,8 +98,9 @@ class CreateSim(object):
         numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
         return math.exp(-numerator / 2.0)
 
-    # See pseudocode in section 3.3 of project specs
+   # See pseudocode in section 3.3 of project specs
     def reweight_particles(self, measurements):
+
         for i in range(0, len(self.particles)):
             w = []
             for t_r in measurements:
@@ -140,17 +139,14 @@ class CreateSim(object):
                         wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
 
                 w.append(wi)
-            self.particles[i][3] = np.sum(np.array(w))
+            self.particles[i][3] = np.prod(np.array(w))
 
         # normalize weights
         w_all = sum([x[3] for x in self.particles])
         for particle in self.particles:
             particle[3] /= w_all
 
-        # new position using weighted average of particles
-        self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
-        self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
-        self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
+        self.updated_robot_position()
 
     def resample(self):
         S = []
@@ -173,6 +169,11 @@ class CreateSim(object):
             S.append(self.particles[j])
 
         self.particles = S
+
+    def get_checkpoint_position(self):
+        nodes = self.graph.nodes
+        index = self.shortest_path[self.checkpoint]
+        return nodes[index]
 
     def print_particles(self):
         for particle in self.particles:
@@ -246,10 +247,52 @@ def main():
 
         # reweight if measurement is fresh
         if fresh:
+
+            # =========== PARTICLE FILTER ===========
+
             sim.iteration += 1
             sim.reweight_particles(meas)
             if sim.iteration % 6 == 0:
                 sim.resample()
+            if sim.iteration < 50:
+                return
+
+            # ============= CONTROLLER =============
+
+            # Relative distance from where you are to checkpoint
+            checkpoint_pos = sim.get_checkpoint_position()
+            dx = sim.x_t[0][0] - checkpoint_pos[0]
+            dy = sim.x_t[1][0] - checkpoint_pos[1]
+
+            # Check/update if you are near checkpoint
+            if np.linalg.norm([dx, dy]) < sim.CHECKPOINT_RADIUS:
+                sim.checkpoint += 1
+                if sim.checkpoint == len(sim.shortest_path):
+                    sim.done = True
+                    return
+                checkpoint_pos = sim.get_checkpoint_position()
+                dx = sim.x_t[0][0] - checkpoint_pos[0]
+                dy = sim.x_t[1][0] - checkpoint_pos[1]
+
+            # Calculate v and omega
+            kp = 1
+            ka = 10
+            kb = 0
+            rho = np.sqrt(dx * dx + dy * dy)
+            beta = -math.atan2(-dy, -dx)
+            alpha = -beta - sim.x_t[2][0]
+            if alpha < -np.pi:
+                alpha += 2 * np.pi
+            if alpha > np.pi:
+                alpha -= 2 * np.pi
+
+            sim.v = kp * rho
+            sim.omega = ka * alpha + kb * beta
+
+            # Move
+            sim.v = .1
+            sim.omega = 0
+            sim.command_velocity(sim.v, sim.omega)
 
         sim.publish_pose()
         rate.sleep()
