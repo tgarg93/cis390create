@@ -149,21 +149,6 @@ class CreateSim(object):
         self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
         self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
 
-
-    # implements the maximum likelihood function
-    def likelihood(self, x, y, theta):
-        a = 1.0
-        b = 1.0
-        c = 5.0
-        numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
-        return math.exp(-numerator / 2.0)
-    
-    def updated_robot_position(self):
-        # new position using weighted average of particles
-        self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
-        self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
-        self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
-        
     def noise(self, mean, var):
         return np.random.normal(mean, var, len(self.particles))
 
@@ -174,6 +159,14 @@ class CreateSim(object):
         weights = [i[3] for i in self.particles]
         self.particles = zip(updated_x, updated_y, updated_angle, weights)
         self.particles = [list(i) for i in self.particles]
+
+    # implements the maximum likelihood function
+    def likelihood(self, x, y, theta):
+        a = 1.0
+        b = 1.0
+        c = 5.0
+        numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
+        return math.exp(-numerator / 2.0)
 
     # See pseudocode in section 3.3 of project specs
     def reweight_particles(self, measurements):
