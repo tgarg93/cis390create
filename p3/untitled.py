@@ -22,6 +22,8 @@ from geometry_msgs.msg import (
     Twist,
 )
 
+from std_msgs.msg import Header
+
 class CreateSim(object):
     def __init__(self,world_map_init,x_init):
         """
@@ -33,18 +35,26 @@ class CreateSim(object):
              same id number.
         """
         self.done=False
+        self._fresh = False
+        self._detections = None
         self.x_t = x_init
         self.particles = []
-        self.num_particles = 200
+        self.num_particles = 100
         self.world_map = world_map_init
         self.iteration = 0
         self.init_particles()
+        self.dt = None
+        self.last_time = None
+        self.count = 0
 
-        name = rospy.get_param("~myname")
+
+             self.turn = False
+
+        name = rospy.get_param("~myname","pi4")
         self.filter_est_pub = rospy.Publisher("/"+name+"/filter_est",PoseStamped,queue_size=10)
-        rospy.Subscriber("/"+name+"/cmd_vel",Twist,self.propagate_particles)
+        rospy.Subscriber("/"+name+"/cmd_vel",Twist,self.propogate_particles)
         rospy.Subscriber("/"+name+"/tag_detections_pose",PoseArray,self._pose_callback)
-       
+
 
     # Generate particles at a uniform distribution
     def init_particles(self):
@@ -58,13 +68,13 @@ class CreateSim(object):
         weights = [1.0 / self.num_particles] * self.num_particles
 
         # create particles
-        self.particles = [list(i) for i in zip(rand_x, rand_y, rand_angle, weights)]
+        self.particles = zip(rand_x, rand_y, rand_angle, weights)
+        self.particles = [list(i) for i in self.particles]
 
-        # initialize x_t
         self.updated_robot_position()
 
-    # Update x_t based on weighted average of particles
     def updated_robot_position(self):
+        # new position using weighted average of particles
         self.x_t[0] = [sum(i[0] * i[3] for i in self.particles)]
         self.x_t[1] = [sum(i[1] * i[3] for i in self.particles)]
         self.x_t[2] = [sum(i[2] * i[3] for i in self.particles)]
@@ -73,20 +83,23 @@ class CreateSim(object):
         return np.random.normal(mean, var, len(self.particles))
 
     def propogate_particles(self,cmd):
+        if self.dt is None:
+            self.last_time = time.time()
+        self.dt = time.time() - self.last_time
+        self.last_time = time.time()
         v = cmd.linear.x
         w = cmd.angular.z
         updated_x = [i[0] + v * self.dt * np.cos(i[2]) for i in self.particles] + self.noise(0, 0.04)
         updated_y = [i[1] + v * self.dt * np.sin(i[2]) for i in self.particles] + self.noise(0, 0.04)
         updated_angle = [i[2] + w * self.dt for i in self.particles] + self.noise(0, 0.02)
         weights = [i[3] for i in self.particles]
-        self.particles = zip(updated_x, updated_y, updated_angle, weights)
-        self.particles = [list(i) for i in self.particles]
+
 
     # implements the maximum likelihood function
     def likelihood(self, x, y, theta):
-        a = 1.0
-        b = 1.0
-        c = 5.0
+        a = .1
+        b = .1
+        c = .5
         numerator = (a * (x ** 2)) + (b * (y ** 2)) + (c * (theta ** 2))
         return math.exp(-numerator / 2.0)
 
@@ -100,7 +113,7 @@ class CreateSim(object):
                 x_t_r = t_r[0]
                 y_t_r = t_r[1]
                 theta_t_r = t_r[2]
-                
+
                 # Find the closest match to the tag we see
                 for tag in self.world_map:
                     if tag[3] == t_r[3]:
@@ -126,6 +139,10 @@ class CreateSim(object):
                         t_p = np.linalg.solve(p_w, t_w)
                         x_t_p = t_p[0][2]
                         y_t_p = t_p[1][2]
+                        # calculate tag position from particle frame
+                        t_p = np.linalg.solve(p_w, t_w)
+                        x_t_p = t_p[0][2]
+                        y_t_p = t_p[1][2]
                         theta_t_p = math.atan2(t_p[1][0], t_p[0][0])
 
                         wi = max(wi, self.likelihood(x_t_p - x_t_r, y_t_p - y_t_r, theta_t_p - theta_t_r))
@@ -135,9 +152,9 @@ class CreateSim(object):
 
         # normalize weights
         w_all = sum([x[3] for x in self.particles])
-        for particle in self.particles:
-            particle[3] /= w_all
-
+        temp = np.array(self.particles)
+        temp[:, 3] /= w_all
+        self.particles = temp.tolist()
         self.updated_robot_position()
 
     def resample(self):
@@ -156,13 +173,15 @@ class CreateSim(object):
             for j in range(len(c) - 1, -1, -1):
                 if c[j] <= u:
                     break
-            self.particles[j][0:3] += np.random.normal(0, 0.02, 3)
+            self.particles[j][0:3] += np.random.normal(0, 0.05, 3)
             self.particles[j][3] = 1.0 / len(self.particles)
             S.append(self.particles[j])
 
         self.particles = S
 
     def get_checkpoint_position(self):
+        nodes = self.graph.nodes
+        def get_checkpoint_position(self):
         nodes = self.graph.nodes
         index = self.shortest_path[self.checkpoint]
         return nodes[index]
@@ -178,7 +197,7 @@ class CreateSim(object):
         if not posemsgarray.poses:
             self._robot_t = None
             self._robot_R = None
-            self._detections = None
+            self._detections = []
             self._fresh = True
             self._no_detection = True
             return
@@ -200,16 +219,25 @@ class CreateSim(object):
         """
         fresh = self._fresh
         self._fresh = False
+        #print self._detections
         return self._detections,fresh
 
     def publish_pose(self):
         """
         Publishes self.x_t to the robot
+        def publish_pose(self):
+        """
+        Publishes self.x_t to the robot
         """
         pose = Pose()
-        pose.position.x = self.x_t[0,0]
-        pose.position.y = self.x_t[1,0]
-        pose.orientation.w = self.x_t[2,0]
+        if self.turn:
+            pose.position.x = 0
+            pose.position.y = 0
+            pose.orientation.w = 0
+        else:
+            pose.position.x = self.x_t[0,0]
+            pose.position.y = self.x_t[1,0]
+            pose.orientation.w = self.x_t[2,0]
         posestamped = PoseStamped()
         posestamped.header = Header()
         posestamped.header.stamp = rospy.Time.now()
@@ -221,17 +249,18 @@ def main():
     Modify simulation parameters here. In particular, the world map,
     starting position, and max iterations to simulate
     """
-    world_map = [[    0.0,    0.0,     0.0, 4],
+    world_map = [[    0.0,    0.0,     0.0, 1],
                  [    0.0,-1.8288,     0.0, 2],
-                 [ 0.9398,-0.8128,     0.0, 1],
-                 [ 1.4859, 0.8636, np.pi/2, 0],
-                 [ 1.4859,-2.3876,-np.pi/2, 3],
-                 [ 2.4892,    0.0,     0.0, 5],
-                 [ 2.4284, 1.8288,     0.0, 6],
-                 [ 3.5687,-0.8128,     0.0, 7]]
+                 [ 0.9398,-0.8128,     0.0, 3],
+                 [ 1.4859, 0.8636,-np.pi/2, 4],
+                 [ 1.4859,-2.3876,np.pi/2, 5],
+                 [ 2.4892,    0.0,     0.0, 7],
+                 [ 2.4284,-1.8288,     0.0, 8],
+                 [ 3.5687,-0.8128,     0.0, 6]]
     pos_init = np.array([[-2.4892, -0.8128, 0.0]]).T
 
     # No changes needed after this point
+    rospy.init_node('Particle_filter')
     sim = CreateSim(world_map, pos_init)
 
     rate = rospy.Rate(60)
@@ -239,21 +268,26 @@ def main():
     while not rospy.is_shutdown():
         """
         TODO: This loop runs at 60Hz. Call your particle filter functions here (i.e. check
-        for measurements, and if so reweight and potentially resample). You do not need to 
+        for measurements, and if so reweight and potentially resample). You do not need to
         call your function to propagate particles here. That is taken care of automatically.
         """
         (meas, fresh) = sim.get_measurements()
 
-        # reweight if measurement is fresh
-        if fresh:
-
+# reweight if measurement is fresh
+        if fresh and meas is not None and len(meas) != 0:
             # =========== PARTICLE FILTER ===========
             sim.iteration += 1
             sim.reweight_particles(meas)
             if sim.iteration % 6 == 0:
                 sim.resample()
-            if sim.iteration < 50:
-                return
+            sim.count = 0
+            sim.turn = False
+
+        elif meas is not None and len(meas) == 0 and fresh:
+            sim.count += 1
+            if sim.count >= 5:
+                sim.turn = True
+                print "YATZEE"
 
         if sim.iteration >= 50:
             sim.publish_pose()
@@ -262,4 +296,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
